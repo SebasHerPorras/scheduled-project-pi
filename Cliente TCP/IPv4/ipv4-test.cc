@@ -8,6 +8,16 @@
 
 #include "VSocket.h"
 #include "Socket.h"
+#include <regex>
+
+char* removeHtmlTags(char* input) {
+   std::string inputStr(input); // Convertir char* a std::string
+   std::regex htmlTagRegex("<[^>]*>");
+   std::string result = std::regex_replace(inputStr, htmlTagRegex, "");
+   char* output = new char[result.length() + 1]; // Reservar memoria para el resultado
+   strcpy(output, result.c_str()); // Copiar el resultado a un char*
+   return output;
+}
 
 int main( int argc, char * argv[] ) {
    const char * os = "http://os.ecci.ucr.ac.cr/";
@@ -22,9 +32,10 @@ int main( int argc, char * argv[] ) {
 
    s = new Socket( 's' );
    s->MakeConnection( ose, 80 );
-   s->Write(  whale );
+   s->Write(  rabbit );
    s->Read( a, 512 );
-   printf( "%s\n", a);
+   char* result = removeHtmlTags(a);
+   printf( "%s\n", result);
 
 }
 
