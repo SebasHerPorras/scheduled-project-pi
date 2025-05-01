@@ -721,6 +721,7 @@ char *FileSystem::find_figura_error()
      _______|  |_______\n\
     |      ERROR       |\n\
     |  SYSTEM FAILURE  |\n\
+    |   404 Not Found  |\n\
     |__________________|\n\
        __/        \\__\n\
       /              \\\n\
