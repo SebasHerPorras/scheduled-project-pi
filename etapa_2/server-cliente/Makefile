@@ -1,44 +1,26 @@
-# Compiladores
+# Linux Makefile
+
+CC  := gcc
 CXX := g++
-
-# Flags de compilación
+CFLAGS := -g -c
 CXXFLAGS := -g -c -std=c++11
-LDFLAGS :=
+LDFLAGS := 
+TARGETS := MirrorClient.out ThreadMirrorServer.out
 
-# Directorios
-SRC := .
-OBJDIR := obj
-BINDIR := exec
-
-VPATH := $(SRC)
-
-# Objetos (ajustados según nombres de archivos que mencionaste)
-OBJS_CLIENT := $(OBJDIR)/MirrorClient.o $(OBJDIR)/VSocket.o $(OBJDIR)/Socket.o
-OBJS_SERVER := $(OBJDIR)/ThreadMirrorServer.o $(OBJDIR)/VSocket.o $(OBJDIR)/Socket.o $(OBJDIR)/file_system.o
-
-TARGETS := $(BINDIR)/MirrorClient.out $(BINDIR)/ThreadMirrorServer.out
-
-# Regla principal
 all: $(TARGETS)
 
-# Crear carpetas si no existen
-$(OBJDIR) $(BINDIR):
-	mkdir -p $@
+# Regla general para compilar archivos .cc a .o
+%.o: %.cc
+	$(CXX) $(CXXFLAGS) $< -o $@
 
-# Reglas genéricas para .cc y .cpp -> .o
-$(OBJDIR)/%.o: %.cc | $(OBJDIR)
-	$(CXX) $(CXXFLAGS) -o $@ $<
+# MirrorClient.out depende de MirrorClient.o, VSocket.o y Socket.o
+MirrorClient.out: MirrorClient.o VSocket.o Socket.o
+	$(CXX) $^ $(LDFLAGS) -o $@
 
-$(OBJDIR)/%.o: %.cpp | $(OBJDIR)
-	$(CXX) $(CXXFLAGS) -o $@ $<
+# ThreadMirrorServer.out depende de ThreadMirrorServer.o, VSocket.o, Socket.o y file_system.o
+ThreadMirrorServer.out: ThreadMirrorServer.o VSocket.o Socket.o file_system.o
+	$(CXX) $^ $(LDFLAGS) -o $@
 
-# Enlazado de ejecutables
-$(BINDIR)/MirrorClient.out: $(OBJS_CLIENT) | $(BINDIR)
-	$(CXX) $^ -o $@
-
-$(BINDIR)/ThreadMirrorServer.out: $(OBJS_SERVER) | $(BINDIR)
-	$(CXX) $^ -o $@
-
-# Limpieza
+# Limpieza de archivos objeto y ejecutables
 clean:
-	rm -rf $(OBJDIR) $(BINDIR)
+	rm -f *.o *.out
