@@ -57,6 +57,9 @@ El sistema incluye un **servidor**, un **cliente simple**, y un **sistema de arc
 ## Créditos
 
 Trabajo realizado por:
-Sebas Hernandez Porras C23770
-Fabricio Aguero: C20097
-Jose Guerra Rodríguez C33510
+
+-Sebas Hernandez Porras C23770
+
+-Fabricio Aguero: C20097
+
+-Jose Guerra Rodríguez C33510
