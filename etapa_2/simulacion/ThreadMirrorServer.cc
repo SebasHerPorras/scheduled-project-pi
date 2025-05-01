@@ -24,7 +24,7 @@
 
 // ==== Parámetros del protocolo ====
 const std::string SERVER_NAME = "ServidorA";
-const std::string SERVER_IP   = "172.16.123.51";
+const std::string SERVER_IP   = "127.0.0.1";
 const std::vector<std::string> FIGURE_LIST = {
     "arbol_navidad", "gato", "barco", "sombrilla"
 };

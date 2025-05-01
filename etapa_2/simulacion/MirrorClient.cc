@@ -9,7 +9,7 @@ int main(int argc, char *argv[])
 {
     char buffer[BUFSIZE];
     std::string figure_name = "gato";        // Por defecto
-    std::string server_ip = "172.28.234.96"; // IP por defecto (quemada)
+    std::string server_ip = "127.0.0.1"; // IP por defecto (quemada)
 
     // Interpretación de argumentos
     if (argc == 1)
