@@ -611,7 +611,7 @@ void FileSystem::cargar_figuras_base() {
         "   / .-._)  d8P'\"\"\"|\"\"\"'-Y8P      ..   barco\n"
         "  ( (`._) .-.  .-. |.-.  .-.  .-.   ) )\n"
         "   \\ `---( O )( O )( O )( O )( O )-' /\n"
-        "    `.    `-'  `-'  `-'  `-'  `-'  .' CJ\n"
+        "    `.    `-'  `-'  `-'  `-'  `-'  .' \n"
         "~~~~~~~~~~~~~~~\n";
 
     char sombrilla[] = "sombrilla";  // Usar arreglo de char
