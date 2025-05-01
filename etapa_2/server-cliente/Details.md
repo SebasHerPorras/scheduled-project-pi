@@ -37,7 +37,11 @@ El sistema incluye un **servidor**, un **cliente simple**, y un **sistema de arc
 
 ---
 
-## Archivo: `filesystem.dat`
+## Protocolo
+
+- Se adjunta pdf con el protocolo predefinido por el grupo.
+
+## Archivo filesystem.dat
 
 - **Ubicación:** generado automáticamente al ejecutar el servidor.
 - **Propósito:** almacena las figuras ASCII en un formato binario estructurado por bloques.
