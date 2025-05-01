@@ -49,7 +49,16 @@ Ejecutar el cliente (en otra terminal)
 ./exec/MirrorClient.out gato
 ```
 
-Resultado esperado: la figura "gato" se imprime por pantalla y el servidor muestra logs del protocolo.
+Resultado esperado: la figura "gato" se imprime por pantalla y el servidor muestra logs del protocolo, así:
+
+```bash
+VSocket::WaitForConnection: client socket: 5
+[Protocol] Accepted new connection, socket id: 5
+[Protocol] Received request: "GET /figure/gato" from socket id 5
+[Protocol] Petición ASCII-art para figura: 'gato'
+[Protocol] Figura encontrada (262 bytes), enviando en chunks...
+[Protocol]   → Enviado chunk de 262 bytes
+```
 
 ## Pruebas manuales con nc (netcat)
 
@@ -94,7 +103,7 @@ Servidor muestra:
 printf "GET /figure/dragon" | nc 127.0.0.1 1231
 ```
 
-Cliente ve:
+Cliente ve figura de error con mensaje:
 
 ```bash
 404 Not Found
