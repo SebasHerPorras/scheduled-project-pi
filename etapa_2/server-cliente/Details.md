@@ -37,14 +37,6 @@ El sistema incluye un **servidor**, un **cliente simple**, y un **sistema de arc
 
 ---
 
-## Simulación
-
-Incluye:
-
--Manual.md: instrucciones de uso
-
--Server de simulación con protocolo
-
 ## Protocolo
 
 - Se adjunta pdf con el protocolo predefinido por el grupo.
