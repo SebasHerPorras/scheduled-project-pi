@@ -1,1 +1,4 @@
 build/
+obj/
+exec/
+*filesystem.dat
