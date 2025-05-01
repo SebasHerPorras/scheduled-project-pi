@@ -10,138 +10,141 @@
   * (Fedora version)
   *
  **/
-
+ 
 #include <iostream>
 #include <thread>
-#include <algorithm>  // std::min
-#include <sstream>    // std::ostringstream
+#include <algorithm> // For std::min and std::max
 
 #include "Socket.h"
 #include "file_system.hpp"
 
-#define PORT    1231
+#define PORT 1234
 #define BUFSIZE 512
 
-// ==== Parámetros del protocolo ====
-const std::string SERVER_NAME = "ServidorA";
-const std::string SERVER_IP   = "172.16.123.51";
-const std::vector<std::string> FIGURE_LIST = {
-    "arbol_navidad", "gato", "barco", "sombrilla"
-};
+void task( VSocket * client );
+bool process_request( char* request, char* response );
 
-std::string make_announcement() {
-    std::ostringstream oss;
-    oss << SERVER_NAME << " | " << SERVER_IP << " | ";
-    for (size_t i = 0; i < FIGURE_LIST.size(); ++i) {
-        oss << FIGURE_LIST[i];
-        if (i + 1 < FIGURE_LIST.size()) oss << ", ";
-    }
-    return oss.str();
-}
 
-// Sistema de archivos global
-FileSystem fs(true);
-
-// Prototipos
-void task(VSocket * client);
-
-// ----------------------------------
-int main(int argc, char **argv) {
-    VSocket * s1;
-    std::thread * worker;
-
-    s1 = new Socket('s');
-    s1->Bind(PORT);
-    s1->MarkPassive(5);
-
-    std::cout << "[Protocol] Server started on port " << PORT << std::endl;
-
-    // Al arrancar, hacemos el "broadcast" de anuncio de servidor
-    std::string announce = make_announcement();
-    std::cout << "[Protocol] Broadcasting announcement: " 
-              << announce << std::endl;
-    // (En tu implementación real harías un sendTo multicast aquí)
-
-    // Bucle principal de aceptación de clientes/tenedores
-    for (;;) {
-        VSocket * client = s1->AcceptConnection();
-        std::cout << "[Protocol] Accepted new connection, socket id: "
-                  << client->idSocket << std::endl;
-        worker = new std::thread(task, client);
-    }
-
-    // (Nunca llega aquí en un server de ciclo infinito)
-    worker->join();
-    delete worker;
-    delete s1;
-    return 0;
-}
-
-// ==================================
-// Task que maneja cada conexión entrante
-// ==================================
+FileSystem fs(true); // Inicializa el sistema de archivos y lo formatea
+/**
+ *   Task each new thread will run
+ *      Read string from socket
+ *      Write it back to client
+ *
+ **/
 void task(VSocket * client) {
-    char buffer[BUFSIZE] = {0};
-    client->Read(buffer, BUFSIZE);
-    std::string req(buffer);
+    char request[BUFSIZE];
+    client->Read(request, BUFSIZE);
 
-    std::cout << "[Protocol] Received request: \"" << req 
-              << "\" from socket id " << client->idSocket << std::endl;
+    std::cout << "Server received: " << request << " from id: " << client->idSocket << std::endl;
 
-    // 1) Descubrimiento de servidores
-    if (req == "GET /servers") {
-        std::string announcement = make_announcement();
-        std::cout << "[Protocol] RESPONDIENDO a GET /servers con: "
-                  << announcement << std::endl;
-        client->Write(announcement.c_str(), announcement.size());
+    char figure_name[BUFSIZE];
+    if (process_request(request, figure_name)) {
+        std::cout << "\n\nRequested figure: " << figure_name << "\n" << std::endl;
+        std::cout <<std::endl;
 
-    // 2) Petición de figura ASCII
-    } else if (req.rfind("GET /figure/", 0) == 0) {
-        std::string figName = req.substr(strlen("GET /figure/"));
-        std::cout << "[Protocol] Petición ASCII-art para figura: '"
-                  << figName << "'" << std::endl;
+        std::string figure = fs.find_figura(figure_name);
+       std::string http_response = 
+         "HTTP/1.1 200 OK\r\n"
+         "Content-Type: text/html; charset=UTF-8\r\n"
+         "Content-Length: " + std::to_string(figure.size()) + "\r\n"
+         "\r\n" +
+         "<html><body>" +
+         "<pre>" + "\n" + figure + "</pre>" +  // Aseguramos que los saltos de línea y formato se respeten
+         "</body></html>";
 
-        std::string figure = fs.find_figura(figName);
-        if (!figure.empty()) {
-            std::cout << "[Protocol] Figura encontrada ("
-                      << figure.size() << " bytes), enviando en chunks..."
-                      << std::endl;
-            size_t total = figure.size(), sent = 0;
-            while (sent < total) {
-                size_t chunk = std::min((size_t)BUFSIZE, total - sent);
-                client->Write(figure.c_str() + sent, chunk);
-                std::cout << "[Protocol]   → Enviado chunk de " 
-                          << chunk << " bytes" << std::endl;
-                sent += chunk;
-            }
-        } else {
-            std::cout << "[Protocol] Figura '" << figName 
-                      << "' no encontrada, enviando 404" << std::endl;
-            std::string error = "404 Not Found";
-            client->Write(error.c_str(), error.size());
-        }
-
-    // 3) Shutdown de servidor
-    } else if (req.rfind("Shutdown ", 0) == 0) {
-        std::string target = req.substr(strlen("Shutdown "));
-        std::cout << "[Protocol] Shutdown request para: '" 
-                  << target << "'" << std::endl;
-        if (target == SERVER_NAME) {
-            std::cout << "[Protocol] Coincide con este servidor → cerrando."
-                      << std::endl;
-            client->Write("Shutdown ACK", strlen("Shutdown ACK"));
-            client->Close();
-            exit(0);
-        } else {
-            std::cout << "[Protocol] No es para mí, ignorando." << std::endl;
-        }
-
-    // 4) Cualquier otro request inválido
+        client->Write(http_response.c_str(), http_response.size());
     } else {
-        std::cout << "[Protocol] Request inválido: " << req << std::endl;
-        std::string invalid = "Invalid request format";
-        client->Write(invalid.c_str(), invalid.size());
+        std::string error_msg = "Invalid request format";
+        std::string http_response = 
+            "HTTP/1.1 400 Bad Request\r\n"
+           "Content-Type: text/html; charset=UTF-8\r\n"
+            "Content-Length: " + std::to_string(error_msg.size()) + "\r\n"
+            "\r\n" +
+            error_msg;
+
+        client->Write(http_response.c_str(), http_response.size());
     }
 
     client->Close();
+}
+
+/**
+ *   Process the request
+ *      Check if the request is valid
+ *      If valid, extract the figure name and return it
+ *      If invalid, return an error message
+ *
+ **/
+bool process_request(char* request, char* response) {
+   std::string req_str(request);
+   std::string prefix = "GET /figure?name=";
+
+   size_t pos_start = req_str.find(prefix);
+   if (pos_start != std::string::npos) {
+      // Buscamos el final de la línea (antes de espacio o \r o \n)
+      size_t pos_name_start = pos_start + prefix.length();
+      size_t pos_end_space = req_str.find(' ', pos_name_start);
+      size_t pos_end_r = req_str.find('\r', pos_name_start);
+      size_t pos_end_n = req_str.find('\n', pos_name_start);
+
+      // Tomamos el mínimo de las posiciones válidas
+      size_t pos_end = std::min({pos_end_space, pos_end_r, pos_end_n, req_str.size()});
+
+      std::string figure_name = req_str.substr(pos_name_start, pos_end - pos_name_start);
+
+      // Eliminamos posibles caracteres indeseados (solo letras y números permitidos)
+      figure_name.erase(std::remove_if(figure_name.begin(), figure_name.end(),
+                                       [](char c) { return !std::isalnum(c) && c != '_' && c != '-'; }),
+                        figure_name.end());
+
+      if (!figure_name.empty()) {
+         strncpy(response, figure_name.c_str(), BUFSIZE - 1);
+         response[BUFSIZE - 1] = '\0';
+         return true;
+      }
+   }
+
+   strncpy(response, "Invalid request format", BUFSIZE - 1);
+   response[BUFSIZE - 1] = '\0';
+   return false;
+}
+
+
+
+/**
+ *   Create server code
+ *      Infinite for
+ *         Wait for client conection
+ *         Spawn a new thread to handle client request
+ *
+ **/
+int main(int argc, char **argv) {
+   std::thread *worker;
+   VSocket *s1, *client;
+
+   int port = PORT; // Default port
+   if (argc > 1) {
+      try {
+         port = std::stoi(argv[1]); // Convert argument to integer
+      } catch (const std::exception &e) {
+         std::cerr << "Invalid port argument. Using default port: " << PORT << std::endl;
+         port = PORT;
+      }
+   }
+
+   s1 = new Socket('s');
+
+   s1->Bind(port);        // Port to access this mirror server
+   s1->MarkPassive(5);    // Set socket passive and backlog queue to 5 connections
+   std::cout << "\nServer started on port: " << port << std::endl;
+   for (;;) {
+      client = s1->AcceptConnection();       // Wait for a client connection
+      worker = new std::thread(task, client);
+   }
+   delete s1;        // Close socket in parent
+   worker->join();   // Wait for thread to finish
+   delete worker;    // Close thread
+   std::cout << "Server finished" << std::endl;
+   return 0;
 }
