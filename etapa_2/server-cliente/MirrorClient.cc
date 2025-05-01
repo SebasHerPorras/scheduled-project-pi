@@ -31,7 +31,7 @@ int main( int argc, char ** argv ) {
    } else {
       std::cout << "No figure name provided, using default: gato" << std::endl;
    }
-   std::string request = "GET /figure?name=" + figure_name;
+   std::string request = "GET /figure/" + figure_name;
    s->Write(request.c_str(), request.size());	// Send string to server
  
    int bytesRead = 0;
