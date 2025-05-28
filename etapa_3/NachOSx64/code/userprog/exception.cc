@@ -121,6 +121,9 @@ bool copyStringFromMachine(int from, char *to, unsigned size) {
 }
 
 void NachOS_Open() {
+   // Se lee el puntero del registro 4
+   int userPtr = machine->ReadRegister(4);
+   char filename[256];
 
 }
 
