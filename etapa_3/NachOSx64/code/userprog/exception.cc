@@ -236,6 +236,10 @@ void NachOS_Write() {
  *  System call interface: OpenFileId Read( char *, int, OpenFileId )
  */
 void NachOS_Read() { // System call 7
+   // Leer parámetros desde los registros
+   int bufferAddr = machine->ReadRegister(4);  // Dirección del buffer en espacio de usuario
+   int size       = machine->ReadRegister(5);  // Número de bytes a leer
+   int fileId     = machine->ReadRegister(6);  // Descriptor de archivo
 
 }
 
