@@ -151,7 +151,46 @@ void NachOS_Read() { // System call 7
  *  System call interface: void Close( OpenFileId )
  */
 void NachOS_Close() {		// System call 8
-   
+   // Leer el descriptor de archivo desde el registro 4
+   int fd = machine->ReadRegister(4);
+   DEBUG('u', "Close syscall: fd=%d\n", fd);
+   // printf("Close syscall: fd=%d\n", fd);
+
+   int result = 0;
+
+   if (fd < 0)
+   {
+      result = -1;
+   }
+   else if (isSocket[fd])
+   {
+      // printf("es socket\n");
+      // Es un socket, cerrar con close()
+      result = close(fd);
+      isSocket[fd] = false;
+   }
+   else
+   {
+      // printf("es archivo regular\n");
+      // Es archivo regular
+      OpenFile *file = openFilesTable->openFiles[fd];
+      if (file != nullptr)
+      {
+         openFilesTable->Close(fd);
+         result = 0;
+      }
+      else
+      {
+         result = -1;
+      }
+   }
+
+   machine->WriteRegister(2, result);
+
+   // Avanzar el PC
+   machine->WriteRegister(PrevPCReg, machine->ReadRegister(PCReg));
+   machine->WriteRegister(PCReg, machine->ReadRegister(NextPCReg));
+   machine->WriteRegister(NextPCReg, machine->ReadRegister(NextPCReg) + 4);
 }
 
 void NachOS_TraerFigura() {	// System call 36
