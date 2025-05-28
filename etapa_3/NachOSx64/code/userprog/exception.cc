@@ -382,7 +382,51 @@ void NachOS_Socket() { // System call 30
   *  System call interface: Socket_t Connect( char *, int )
   */
  void NachOS_Connect() { // System call 31
-   
+   int sockfd = machine->ReadRegister(4);
+   int addr_ptr = machine->ReadRegister(5); // dirección en user space
+   int port = machine->ReadRegister(6);
+
+   // Leer IP desde memoria de usuario (máx 16 bytes por seguridad)
+   char ip[16]; // ejemplo: "127.0.0.1"
+   for (int i = 0; i < 15; ++i)
+   {
+      char c;
+      machine->ReadMem(addr_ptr + i, 1, (int *)&c);
+      ip[i] = c;
+      if (c == '\0')
+         break;
+   }
+   ip[15] = '\0';
+   //  const char* ipquemada = "163.178.104.62";
+   DEBUG('u', "Connect syscall: sockfd=%d, ip=%s, port=%d\n", sockfd, ip, port);
+   printf("Connect syscall: sockfd=%d, ip=%s, port=%d\n", sockfd, ip, port);
+
+   // Crear sockaddr_in
+   struct sockaddr_in serv_addr;
+   serv_addr.sin_family = AF_INET;
+   serv_addr.sin_port = htons(port);
+   serv_addr.sin_addr.s_addr = inet_addr(ip);
+
+   // Realizar conexión
+   // printf("Connect syscall: intentando conectar...\n");
+   int result = connect(sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr));
+   // printf("Connect syscall: resultado de connect=%d\n", result);
+   if (result < 0)
+   {
+      perror("Connect syscall: error en connect");
+      machine->WriteRegister(2, -1);
+   }
+   else
+   {
+      machine->WriteRegister(2, 0); // éxito
+      DEBUG('u', "Connect syscall: conexión exitosa\n");
+      printf("Connect syscall: conexión exitosa\n");
+   }
+
+   // Avanzar el PC SIEMPRE
+   machine->WriteRegister(PrevPCReg, machine->ReadRegister(PCReg));
+   machine->WriteRegister(PCReg, machine->ReadRegister(NextPCReg));
+   machine->WriteRegister(NextPCReg, machine->ReadRegister(NextPCReg) + 4);
 }
 
 
