@@ -168,6 +168,61 @@ void NachOS_Write() {
       machine->WriteRegister(NextPCReg, machine->ReadRegister(NextPCReg) + 4);
       return;
    }
+   int bytesToWrite = (size < 511) ? size : 511;
+   char buffer[512];
+
+   for (int i = 0; i < bytesToWrite; i++) {
+      int val;
+      if (!machine->ReadMem(addr + i, 1, &val)) {
+         machine->WriteRegister(2, -1);
+         // Avanzar PC
+         machine->WriteRegister(PrevPCReg, machine->ReadRegister(PCReg));
+         machine->WriteRegister(PCReg, machine->ReadRegister(NextPCReg));
+         machine->WriteRegister(NextPCReg, machine->ReadRegister(NextPCReg) + 4);
+         return;
+      }
+      buffer[i] = (char)val;
+   }
+   buffer[bytesToWrite] = '\0';
+   OpenFile* file = nullptr;
+   if (fd == 1 || fd == 2) {
+      // Escribir en consola estándar o error estándar
+      int written = write(fd, buffer, bytesToWrite);
+      if (written < 0) {
+         perror("console write");
+         machine->WriteRegister(2, -1);
+      } else {
+         machine->WriteRegister(2, written);
+      }
+   } else {
+      file = nullptr;
+      if (fd >= 0) {
+         file = openFilesTable->getOpenFile(fd);
+      }
+      if (isSocket[fd]) {
+         // es socket
+         //printf("es socket\n");
+         int written = write(fd, buffer, bytesToWrite);
+         if (written < 0) {
+            perror("socket write");
+            machine->WriteRegister(2, -1);
+         } else {
+            machine->WriteRegister(2, written);
+         }
+     } else {
+         // es archivo regular
+         //printf("\n\nes archivo regular\n");
+         file = openFilesTable->openFiles[fd];
+         if (file == nullptr) {
+            DEBUG('u', "Write syscall: Descriptor inválido %d\n", fd);
+            printf("Descriptor inválido %d\n", fd);
+            machine->WriteRegister(2, -1);
+         } else {
+            int written = file->Write(buffer, bytesToWrite);
+            machine->WriteRegister(2, written);
+         }
+     }
+   }
 }
 
 
