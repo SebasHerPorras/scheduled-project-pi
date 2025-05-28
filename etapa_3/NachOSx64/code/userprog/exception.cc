@@ -154,6 +154,11 @@ void NachOS_Open() {
  *  System call interface: OpenFileId Write( char *, int, OpenFileId )
  */
 void NachOS_Write() {
+   // Lectura de los registros
+   int addr = machine->ReadRegister(4);
+   int size = machine->ReadRegister(5);
+   int fd = machine->ReadRegister(6);
+   DEBUG('u', "Write syscall: fd=%d, addr=0x%x, size=%d\n", fd, addr, size);
 
 }
 
