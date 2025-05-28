@@ -347,8 +347,35 @@ void NachOS_CondBroadcast() {		// System call 23
  *  System call interface: Socket_t Socket( int, int )
  */
 void NachOS_Socket() { // System call 30
-  
-
+   // AF_INET_NachOS, SOCK_STREAM_NachOS como parametros
+   int domain = machine->ReadRegister(4);
+   int type = machine->ReadRegister(5);
+   // Validar los parámetros
+   // Traducción NachOS a POSIX
+   domain = (domain == 0) ? AF_INET : AF_UNSPEC;
+   type = (type == 0) ? SOCK_STREAM : SOCK_DGRAM;
+   DEBUG('u', "Socket syscall: domain=%d, type=%d\n", domain, type);
+   // Crear socket con syscall de c
+   int sockfd = socket(domain, type, 0);
+   if (sockfd < 0)
+   {
+      DEBUG('u', "Socket syscall: Error al crear socket\n");
+      printf("Error al crear socket\n");
+      machine->WriteRegister(2, -1);
+   }
+   else
+   {
+      DEBUG('u', "Socket syscall: Socket creado con fd=%d\n", sockfd);
+      printf("Socket creado con fd=%d\n", sockfd);
+      // Agregar socket a la tabla de archivos abiertos
+      isSocket[sockfd] = true;
+      machine->WriteRegister(2, sockfd);
+   }
+   // poner el sockfd en el registro 2 que es el de retorno
+   // Avanzar el PC SIEMPRE
+   machine->WriteRegister(PrevPCReg, machine->ReadRegister(PCReg));
+   machine->WriteRegister(PCReg, machine->ReadRegister(NextPCReg));
+   machine->WriteRegister(NextPCReg, machine->ReadRegister(NextPCReg) + 4);
  }
  
  /*
