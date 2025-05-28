@@ -124,7 +124,10 @@ void NachOS_Open() {
    // Se lee el puntero del registro 4
    int userPtr = machine->ReadRegister(4);
    char filename[256];
-
+   // Copiar la cadena desde el espacio de usuario
+   if (!copyStringFromMachine(userPtr, filename, 256)) {
+      machine->WriteRegister(2, -1);
+   } 
 }
 
 
