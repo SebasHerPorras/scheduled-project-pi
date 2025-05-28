@@ -127,7 +127,20 @@ void NachOS_Open() {
    // Copiar la cadena desde el espacio de usuario
    if (!copyStringFromMachine(userPtr, filename, 256)) {
       machine->WriteRegister(2, -1);
-   } 
+   } else {
+      OpenFile* file = fileSystem->Open(filename);
+      if (file == NULL) {
+         machine->WriteRegister(2, -1);
+      } else { // Abrir un archivo nuevo
+         int index = openFilesTable->Open(file);
+         if (index == -1) {
+            delete file;
+            machine->WriteRegister(2, -1);
+         } else {
+            machine->WriteRegister(2, index);
+         }
+      }
+   }
 }
 
 
