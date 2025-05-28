@@ -246,6 +246,21 @@ void NachOS_Read() { // System call 7
       machine->WriteRegister(2, -1);
       return;
    }
+   char* kernelBuffer = new char[size + 1]; // +1 por seguridad
+   int bytesRead = 0;
+   // Leer desde archivo/socket real
+   bytesRead = read(fileId, kernelBuffer, size);
+   if (bytesRead < 0) {
+      DEBUG('u', "Read syscall: error al leer desde fd=%d\n", fileId);
+      machine->WriteRegister(2, -1);
+   } else {
+      for (int i = 0; i < bytesRead; i++) {
+         machine->WriteMem(bufferAddr + i, 1, (int)kernelBuffer[i]);
+      }
+      machine->WriteRegister(2, bytesRead); // Cantidad de bytes leídos
+   }
+   delete[] kernelBuffer;
+
 
 }
 
