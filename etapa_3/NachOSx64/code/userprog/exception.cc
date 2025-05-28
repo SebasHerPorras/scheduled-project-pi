@@ -240,6 +240,12 @@ void NachOS_Read() { // System call 7
    int bufferAddr = machine->ReadRegister(4);  // Dirección del buffer en espacio de usuario
    int size       = machine->ReadRegister(5);  // Número de bytes a leer
    int fileId     = machine->ReadRegister(6);  // Descriptor de archivo
+   DEBUG('u', "Read syscall: fd=%d, addr=0x%x, size=%d\n", fileId, bufferAddr, size);
+   // Validación para evitarnos errores
+   if (size <= 0 || bufferAddr == 0) {
+      machine->WriteRegister(2, -1);
+      return;
+   }
 
 }
 
