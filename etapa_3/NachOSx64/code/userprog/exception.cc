@@ -159,7 +159,15 @@ void NachOS_Write() {
    int size = machine->ReadRegister(5);
    int fd = machine->ReadRegister(6);
    DEBUG('u', "Write syscall: fd=%d, addr=0x%x, size=%d\n", fd, addr, size);
-
+   // Retornar de una vez para salirnos si size < 0
+   if (size < 0) {
+      machine->WriteRegister(2, -1);
+      // Avanzar PC
+      machine->WriteRegister(PrevPCReg, machine->ReadRegister(PCReg));
+      machine->WriteRegister(PCReg, machine->ReadRegister(NextPCReg));
+      machine->WriteRegister(NextPCReg, machine->ReadRegister(NextPCReg) + 4);
+      return;
+   }
 }
 
 
