@@ -75,7 +75,31 @@ void NachOS_Halt() {		// System call 0
  *  System call interface: void Exit( int )
  */
 void NachOS_Exit() {
+   int status = machine->ReadRegister(4);    // código de salida
+   DEBUG('u', "Exit system call with status %d\n", status);
 
+   AddrSpace* space = (AddrSpace*)currentThread->space;
+   auto* pageTable = space->getPageTable();
+   unsigned numPages = space->getNumPages();
+
+   // Liberar páginas asignadas en el bitmap con exclusión mutua
+   for (unsigned i = 0; i < numPages; i++) {
+      memoryLock->Acquire();
+      MiMapa->Clear(pageTable[i].physicalPage);
+      memoryLock->Release();
+   }
+
+   printf("Thread %s exiting with status %d\n", currentThread->getName(), status);
+
+   // Avanzar el PC para evitar bucles infinitos de syscalls
+   machine->WriteRegister(PrevPCReg, machine->ReadRegister(PCReg));
+   machine->WriteRegister(PCReg, machine->ReadRegister(NextPCReg));
+   machine->WriteRegister(NextPCReg, machine->ReadRegister(NextPCReg) + 4);
+   // No es necesario avanzar NextPCReg, solo PCReg y PrevPCReg.
+   // El bucle infinito suele ocurrir si no se avanza el PC correctamente.
+   // Elimina la línea que avanza NextPCReg.
+
+   currentThread->Finish();
 }
 
 
@@ -98,7 +122,37 @@ void NachOS_Join() {		// System call 3
  *  System call interface: void Create( char * )
  */
 void NachOS_Create() {
+   int addr = machine->ReadRegister(4);  // Dirección del nombre del archivo
+   bool fallo = false;
 
+   char filename[128];  // Asumimos nombre corto (<128)
+   int i = 0;
+   int ch;
+   do {
+       if (!machine->ReadMem(addr + i, 1, &ch)) {
+           fallo = true;
+           break;
+       }
+       filename[i] = (char)ch;
+       i++;
+   } while (ch != '\0' && i < 127);
+   filename[127] = '\0';
+
+   if (fallo) {
+       machine->WriteRegister(2, -1);
+   } else {
+       printf("Create syscall de manera correcta: filename=%s\n", filename);
+       if (fileSystem->Create(filename, 0)) {
+           machine->WriteRegister(2, 1);
+       } else {
+           machine->WriteRegister(2, -1);
+       }
+   }
+
+   // Avanzar PC
+   machine->WriteRegister(PrevPCReg, machine->ReadRegister(PCReg));
+   machine->WriteRegister(PCReg, machine->ReadRegister(NextPCReg));
+   machine->WriteRegister(NextPCReg, machine->ReadRegister(NextPCReg) + 4);
 }
 
 
