@@ -12,13 +12,13 @@ VPATH := $(SRC)
 $(shell mkdir -p $(OBJDIR) $(BINDIR))
 
 # Objetos por ejecutable
-OBJS_CLIENT := $(OBJDIR)/Client.o $(OBJDIR)/VSocket.o $(OBJDIR)/Socket.o
-OBJS_FIGURA := $(OBJDIR)/figura_discovery.o $(OBJDIR)/VSocket.o $(OBJDIR)/Socket.o $(OBJDIR)/file_system.o
-OBJS_TENEDOR := $(OBJDIR)/tenedor_discovery.o $(OBJDIR)/VSocket.o $(OBJDIR)/Socket.o
+OBJS_CLIENT := $(OBJDIR)/cliente.o
+OBJS_FIGURA := $(OBJDIR)/figura_discovery.o
+OBJS_TENEDOR := $(OBJDIR)/tenedor_discovery.o
 
 
 # Ejecutables
-TARGET_CLIENT := $(BINDIR)/Client.out
+TARGET_CLIENT := $(BINDIR)/cliente.out
 TARGET_FIGURA := $(BINDIR)/figura_discovery.out
 TARGET_TENEDOR := $(BINDIR)/tenedor_discovery.out
 
