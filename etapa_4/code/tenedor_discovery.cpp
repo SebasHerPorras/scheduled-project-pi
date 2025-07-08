@@ -36,15 +36,8 @@ vector<string> broadcast_ips = {
     "172.16.123.111", // /28 ISLA 6
 };
 
-// Estructura para guardar información del servidor
-struct InfoServidor
-{
-    string server_name;
-    string ip;
-};
-
-// Tabla de ruteo: figura -> información del servidor que la contiene
-map<string, InfoServidor> tabla_ruteo;
+// Tabla de ruteo: figura -> IP del servidor que la contiene
+map<string, string> tabla_ruteo;
 mutex tabla_mutex; // Protege el acceso a la tabla
 
 // ---------------------------------------------
@@ -90,7 +83,7 @@ void unified_udp_listener() {
                 lock_guard<mutex> lock(tabla_mutex);
                 for (auto it = tabla_ruteo.begin(); it != tabla_ruteo.end();)
                 {
-                    if (it->second.server_name == nombre)
+                    if (it->second == ipStr)
                     {
                         cout << "[SHUTDOWN] Eliminando figura '" << it->first << "' (Servidor: " << nombre << ")\n";
                         it = tabla_ruteo.erase(it);
@@ -131,7 +124,7 @@ void unified_udp_listener() {
                         figura.erase(figura.find_last_not_of(' ') + 1);
                         figura.erase(0, figura.find_first_not_of(' '));
 
-                        tabla_ruteo[figura] = {nombre, ip};
+                        tabla_ruteo[figura] = ip;
                         cout << "[RUTEO] Figura '" << figura << "' registrada con IP " << ip << endl;
                     }
                 }
@@ -204,7 +197,7 @@ void manejar_peticion_http(VSocket *cliente) {
             auto it = tabla_ruteo.find(nombre_figura);
             if (it != tabla_ruteo.end())
             {
-                ip_destino = it->second.ip;
+                ip_destino = it->second;
             }
         }
 
@@ -268,15 +261,15 @@ void manejar_peticion_http(VSocket *cliente) {
             cout << "[HTTP] Figura '" << nombre_figura << "' no encontrada\n";
         }
     }
-    else if (request.find("/list") != string::npos)
-    { // aceptamos cualquier variación
+    else if (request.find("GET /list") != string::npos)
+    {
         // Construir lista de figuras disponibles
         string body = "<html><body><h2>Figuras disponibles:</h2><ul>";
         {
             lock_guard<mutex> lock(tabla_mutex);
             for (const auto &par : tabla_ruteo)
             {
-                body += "<li>" + par.first + " (Servidor: " + par.second.server_name + " - " + par.second.ip + ")</li>";
+                body += "<li>" + par.first + " (Servidor: " + par.second + ")</li>";
             }
         }
         body += "</ul></body></html>";
