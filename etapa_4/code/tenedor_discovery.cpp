@@ -41,41 +41,115 @@ map<string, string> tabla_ruteo;
 mutex tabla_mutex; // Protege el acceso a la tabla
 
 // ---------------------------------------------
-// Hilo de descubrimiento: envía broadcast y recibe respuestas UDP
+// Hilo unificado para escucha UDP (descubrimiento y shutdown)
 // ---------------------------------------------
-void discovery_thread() {
-    // Socket para enviar broadcasts
-    Socket send_sock('d');
-    send_sock.BuildSocket('d');
+void unified_udp_listener() {
+    Socket sock('d');
+    sock.BuildSocket('d');
     
-    // Permitir broadcast en este socket
+    // Configurar socket
     int yes = 1;
-    setsockopt(send_sock.idSocket, SOL_SOCKET, SO_BROADCAST, &yes, sizeof(yes));
+    setsockopt(sock.idSocket, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));
+    setsockopt(sock.idSocket, SOL_SOCKET, SO_BROADCAST, &yes, sizeof(yes));
+    sock.Bind(DISCOVERY_PORT);
 
-    // Socket separado para recibir respuestas
-    Socket recv_sock('d');
-    recv_sock.BuildSocket('d');
-    
-    // Configurar para reutilizar dirección
-    setsockopt(recv_sock.idSocket, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));
-    
-    // Bind a cualquier dirección en el puerto de descubrimiento
-    recv_sock.Bind(DISCOVERY_PORT);
-    
-    // Configurar timeout para recepción
+    // Configurar timeout
     struct timeval timeout;
     timeout.tv_sec = TIMEOUT_RESPONSE;
     timeout.tv_usec = 0;
-    setsockopt(recv_sock.idSocket, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+    setsockopt(sock.idSocket, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+
+    cout << "[UDP] Escuchando en puerto " << DISCOVERY_PORT << " (descubrimiento y shutdown)\n";
+
+    while (true) {
+        char buffer[512];
+        sockaddr_in senderAddr{};
+        size_t len = sock.recvFrom(buffer, sizeof(buffer) - 1, &senderAddr);
+        
+        if (len > 0) {
+            buffer[len] = '\0';
+            string mensaje(buffer);
+            char ipStr[INET_ADDRSTRLEN];
+            inet_ntop(AF_INET, &(senderAddr.sin_addr), ipStr, INET_ADDRSTRLEN);
+
+            cout << "[UDP] Mensaje recibido de " << ipStr << ": " << mensaje << endl;
+
+            // Manejar shutdown
+            if (mensaje.rfind("Shutdown", 0) == 0) {
+                istringstream iss(mensaje);
+                string cmd, nombre;
+                iss >> cmd >> nombre;
+                
+                lock_guard<mutex> lock(tabla_mutex);
+                for (auto it = tabla_ruteo.begin(); it != tabla_ruteo.end();) {
+                    if (it->second == ipStr) {
+                        cout << "[SHUTDOWN] Eliminando figura '" << it->first << "' (Servidor: " << nombre << ")\n";
+                        it = tabla_ruteo.erase(it);
+                    } else {
+                        ++it;
+                    }
+                }
+            }
+            // Manejar anuncios de servidores
+            else if (mensaje != "GET /servers") {  // Ignorar broadcasts de otros tenedores
+                istringstream iss(mensaje);
+                string nombre, ip, lista;
+
+                if (getline(iss, nombre, '|') &&
+                    getline(iss, ip, '|') &&
+                    getline(iss, lista)) {
+                    
+                    // Limpiar solo espacios alrededor del separador
+                    nombre.erase(nombre.find_last_not_of(' ') + 1);
+                    nombre.erase(0, nombre.find_first_not_of(' '));
+                    ip.erase(ip.find_last_not_of(' ') + 1);
+                    ip.erase(0, ip.find_first_not_of(' '));
+                    lista.erase(lista.find_last_not_of(' ') + 1);
+                    lista.erase(0, lista.find_first_not_of(' '));
+
+                    // Validar IP
+                    struct sockaddr_in tmp;
+                    if (inet_pton(AF_INET, ip.c_str(), &tmp.sin_addr) != 1) {
+                        cerr << "[UDP] IP inválida recibida: " << ip << endl;
+                        continue;
+                    }
+
+                    istringstream figs_stream(lista);
+                    string figura;
+                    lock_guard<mutex> lock(tabla_mutex);
+                    while (getline(figs_stream, figura, ',')) {
+                        // Limpiar nombre de figura
+                        figura.erase(figura.find_last_not_of(' ') + 1);
+                        figura.erase(0, figura.find_first_not_of(' '));
+                        
+                        tabla_ruteo[figura] = ip;
+                        cout << "[RUTEO] Figura '" << figura << "' registrada con IP " << ip << endl;
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ---------------------------------------------
+// Hilo que envía solicitudes de descubrimiento
+// ---------------------------------------------
+void discovery_sender() {
+    Socket send_sock('d');
+    send_sock.BuildSocket('d');
+    
+    // Permitir broadcast
+    int yes = 1;
+    setsockopt(send_sock.idSocket, SOL_SOCKET, SO_BROADCAST, &yes, sizeof(yes));
 
     sockaddr_in addr{};
     addr.sin_family = AF_INET;
     addr.sin_port = htons(DISCOVERY_PORT);
 
     while (true) {
-        cout << "[DISCOVERY] Nueva ronda de descubrimiento\n";
+        cout << "[DISCOVERY] Enviando solicitudes de descubrimiento\n";
 
-        // Enviar broadcast a todas las IPs configuradas
+        // Enviar broadcast a todas las IPs
         string mensaje = "GET /servers";
         for (const auto &ip : broadcast_ips) {
             inet_pton(AF_INET, ip.c_str(), &addr.sin_addr);
@@ -83,62 +157,16 @@ void discovery_thread() {
             cout << "[BROADCAST] Enviado a " << ip << endl;
         }
 
-        // Esperar respuestas
-        auto start = chrono::steady_clock::now();
-        char buffer[512];
-        sockaddr_in senderAddr{};
-
-        while (true) {
-            auto now = chrono::steady_clock::now();
-            if (chrono::duration_cast<chrono::seconds>(now - start).count() > TIMEOUT_RESPONSE)
-                break;
-
-            // Recibir datos en el socket de recepción
-            size_t len = recv_sock.recvFrom(buffer, sizeof(buffer) - 1, &senderAddr);
-            if (len == 0) continue; // Timeout
-            
-            buffer[len] = '\0';
-            char ipStr[INET_ADDRSTRLEN];
-            inet_ntop(AF_INET, &(senderAddr.sin_addr), ipStr, INET_ADDRSTRLEN);
-            cout << "[DISCOVERY] Respuesta recibida de " << ipStr << endl;
-            
-            string respuesta(buffer);
-            
-            // Procesar respuesta como antes...
-            istringstream iss(respuesta);
-            string nombre, ip, lista;
-
-            if (getline(iss, nombre, '|') &&
-                getline(iss, ip, '|') &&
-                getline(iss, lista)) {
-                
-                // Limpiar espacios
-                nombre.erase(remove(nombre.begin(), nombre.end(), ' '), nombre.end());
-                ip.erase(remove(ip.begin(), ip.end(), ' '), ip.end());
-                lista.erase(remove(lista.begin(), lista.end(), ' '), lista.end());
-
-                istringstream figs_stream(lista);
-                string figura;
-                lock_guard<mutex> lock(tabla_mutex);
-                while (getline(figs_stream, figura, ',')) {
-                    tabla_ruteo[figura] = ip;
-                    cout << "[RUTEO] Figura '" << figura << "' registrada con IP " << ip << endl;
-                }
-            }
-        }
-
         this_thread::sleep_for(chrono::seconds(BROADCAST_WAIT));
     }
 
     send_sock.Close();
-    recv_sock.Close();
 }
 
 // ---------------------------------------------
 // Función que atiende una conexión HTTP
 // ---------------------------------------------
-void manejar_peticion_http(VSocket *cliente)
-{
+void manejar_peticion_http(VSocket *cliente) {
     char buffer[2048] = {0};
     size_t bytes = cliente->Read(buffer, sizeof(buffer) - 1);
     buffer[bytes] = '\0';
@@ -147,54 +175,63 @@ void manejar_peticion_http(VSocket *cliente)
     string prefix = "GET /figure?name=";
     size_t pos = request.find(prefix);
 
-    if (pos != string::npos)
-    {
-        // Extraer el nombre de la figura de la URL
+    if (pos != string::npos) {
+        // Extraer el nombre de la figura
         string nombre_figura = request.substr(pos + prefix.length());
         size_t fin = nombre_figura.find(' ');
-        if (fin != string::npos)
+        if (fin != string::npos) {
             nombre_figura = nombre_figura.substr(0, fin);
+        }
 
-        std::cout<<nombre_figura<<std::endl;
+        // Limpiar caracteres no deseados
+        nombre_figura.erase(remove(nombre_figura.begin(), nombre_figura.end(), '\r'), nombre_figura.end());
+        nombre_figura.erase(remove(nombre_figura.begin(), nombre_figura.end(), '\n'), nombre_figura.end());
+
+        cout << "[HTTP] Solicitud para figura: " << nombre_figura << endl;
 
         string ip_destino;
         {
-            // Buscar la figura en la tabla de ruteo
             lock_guard<mutex> lock(tabla_mutex);
-            if (tabla_ruteo.find(nombre_figura) != tabla_ruteo.end())
-                ip_destino = tabla_ruteo[nombre_figura];
+            auto it = tabla_ruteo.find(nombre_figura);
+            if (it != tabla_ruteo.end()) {
+                ip_destino = it->second;
+            }
         }
-        std::cout << "ip de la figura: " << ip_destino << std::endl;
-        if (!ip_destino.empty())
-        {
-            try
-            {
+
+        if (!ip_destino.empty()) {
+            try {
                 Socket servidor_tcp('s');
                 servidor_tcp.BuildSocket('s');
-                servidor_tcp.MakeConnection(ip_destino.c_str(), TCP_SERVER_PORT);
-
-                // Solicitar la figura al servidor correspondiente
-                string solicitud = "GET /figure/" + nombre_figura;
-                servidor_tcp.Write(solicitud.c_str(), solicitud.size());
-
-                char respuesta[2048] = {0};
+                
+                // Configurar timeout
                 struct timeval timeout;
                 timeout.tv_sec = TIMEOUT_RESPONSE;
                 timeout.tv_usec = 0;
                 setsockopt(servidor_tcp.idSocket, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
 
-                size_t bytes = servidor_tcp.Read(respuesta, sizeof(respuesta) - 1);
+                cout << "[HTTP] Conectando con servidor " << ip_destino << " para figura " << nombre_figura << endl;
+                servidor_tcp.MakeConnection(ip_destino.c_str(), TCP_SERVER_PORT);
 
-                if (bytes == 0)
-                {
-                    // No se recibió nada, se considera error
-                    throw std::runtime_error("Respuesta vacía del servidor");
+                // Solicitar la figura
+                string solicitud = "GET /figure/" + nombre_figura + "\r\n";
+                servidor_tcp.Write(solicitud.c_str(), solicitud.size());
+
+                char respuesta[512];
+                string figura_completa;
+                while(bytes > 0) {
+                    memset(respuesta, 0, sizeof(respuesta));
+                    size_t bytes = servidor_tcp.Read(respuesta, sizeof(respuesta) - 1);
+                    figura_completa.append(respuesta, bytes);
+                    if (bytes < sizeof(respuesta, bytes) - 1) break;
                 }
-
+                
+                if (figura_completa.empty()) {
+                    throw runtime_error("No se recibió respuesta del servidor");
+                }
                 respuesta[bytes] = '\0';
 
-                // Construir respuesta HTTP válida con el contenido (figura o error)
-                string body = "<html><body><pre>\n" + string(respuesta) + "\n</pre></body></html>";
+                // Construir respuesta HTTP
+                string body = "<html><body><pre>\n" + figura_completa + "\n</pre></body></html>";
                 string http_response =
                     "HTTP/1.1 200 OK\r\n"
                     "Content-Type: text/html; charset=UTF-8\r\n"
@@ -202,34 +239,33 @@ void manejar_peticion_http(VSocket *cliente)
                     to_string(body.size()) + "\r\n\r\n" + body;
 
                 cliente->Write(http_response.c_str(), http_response.size());
-                cout << "[HTTP] Figura '" << nombre_figura << "' enviada al cliente.\n";
+                cout << "[HTTP] Figura '" << nombre_figura << "' enviada al cliente\n";
                 servidor_tcp.Close();
             }
-            catch (exception e)
-            {
-                std :: cout << "error del try catch: " << e.what() << std::endl;
-                // Si ocurre una excepción, se responde con 404
+            catch (const exception &e) {
+                cerr << "[HTTP] Error al contactar servidor: " << e.what() << endl;
+                
+                // Eliminar figura de la tabla si falla la conexión
+                lock_guard<mutex> lock(tabla_mutex);
+                tabla_ruteo.erase(nombre_figura);
+
                 string err = "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n";
                 cliente->Write(err.c_str(), err.size());
-                cout << "[HTTP] Timeout/error al contactar servidor de figura '" << nombre_figura << "'.\n";
             }
-        }
-        else
-        {
-            // Figura no encontrada en la tabla: responder 404
+        } else {
             string err = "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n";
             cliente->Write(err.c_str(), err.size());
-            cout << "[HTTP] Figura '" << nombre_figura << "' no registrada. Se envía error 404.\n";
+            cout << "[HTTP] Figura '" << nombre_figura << "' no encontrada\n";
         }
     }
-    else if (request.find("GET /list") != string::npos)
-    {
-        // Construir lista HTML de todas las figuras disponibles
+    else if (request.find("GET /list") != string::npos) {
+        // Construir lista de figuras disponibles
         string body = "<html><body><h2>Figuras disponibles:</h2><ul>";
         {
             lock_guard<mutex> lock(tabla_mutex);
-            for (const auto &par : tabla_ruteo)
-                body += "<li>" + par.first + "</li>";
+            for (const auto &par : tabla_ruteo) {
+                body += "<li>" + par.first + " (Servidor: " + par.second + ")</li>";
+            }
         }
         body += "</ul></body></html>";
 
@@ -240,14 +276,12 @@ void manejar_peticion_http(VSocket *cliente)
             to_string(body.size()) + "\r\n\r\n" + body;
 
         cliente->Write(http_response.c_str(), http_response.size());
-        cout << "[HTTP] Lista de figuras enviada al cliente.\n";
+        cout << "[HTTP] Lista de figuras enviada\n";
     }
-    else
-    {
-        // Cualquier otra solicitud no válida
+    else {
         string err = "HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n";
         cliente->Write(err.c_str(), err.size());
-        cout << "[HTTP] Solicitud inválida.\n";
+        cout << "[HTTP] Solicitud inválida recibida\n";
     }
 
     cliente->Close();
@@ -255,85 +289,34 @@ void manejar_peticion_http(VSocket *cliente)
 }
 
 // ---------------------------------------------
-// Hilo HTTP que atiende a múltiples clientes concurrentes
+// Hilo HTTP que atiende a múltiples clientes
 // ---------------------------------------------
-void atender_clientes_http()
-{
+void atender_clientes_http() {
     VSocket *servidor = new Socket('s');
     servidor->Bind(CLIENT_HTTP_PORT);
     servidor->MarkPassive(5);
     cout << "[HTTP] Servidor escuchando en puerto " << CLIENT_HTTP_PORT << "\n";
 
-    while (true)
-    {
+    while (true) {
         VSocket *cliente = servidor->AcceptConnection();
-        thread(manejar_peticion_http, cliente).detach(); // Cada cliente en su hilo
+        thread(manejar_peticion_http, cliente).detach();
     }
 
     delete servidor;
 }
-// ---------------------------------------------
-// Hilo UDP que escucha mensajes de apagado de servidores
-// ---------------------------------------------
-void shutdown_listener()
-{
-    Socket s('d');
-    s.BuildSocket('d');
 
-    // Permitir reutilizar puerto
-    int yes = 1;
-    setsockopt(s.idSocket, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes));
-
-    s.Bind(DISCOVERY_PORT);
-
-    cout << "[SHUTDOWN] Escuchando notificaciones de muerte en puerto " << DISCOVERY_PORT << "...\n";
-
-    sockaddr_in addr{};
-    char buffer[512];
-
-    while (true)
-    {
-        size_t len = s.recvFrom(buffer, sizeof(buffer) - 1, &addr);
-        buffer[len] = '\0';
-        string mensaje(buffer);
-
-        if (mensaje.rfind("Shutdown", 0) == 0)
-        {
-            istringstream iss(mensaje);
-            string cmd, nombre;
-            iss >> cmd >> nombre;
-
-            string ip_muerta = inet_ntoa(addr.sin_addr);
-
-            lock_guard<mutex> lock(tabla_mutex);
-            for (auto it = tabla_ruteo.begin(); it != tabla_ruteo.end();)
-            {
-                if (it->second == ip_muerta)
-                {
-                    cout << "[SHUTDOWN] Figura '" << it->first << "' eliminada (Servidor: " << nombre << ", IP: " << ip_muerta << ")\n";
-                    it = tabla_ruteo.erase(it);
-                }
-                else
-                {
-                    ++it;
-                }
-            }
-        }
-    }
-
-    s.Close();
-}
 // ---------------------------------------------
 // Función principal
 // ---------------------------------------------
-int main()
-{
-    cout << "[INIT] Tenedor activo.\n";
+int main() {
+    cout << "[INIT] Tenedor de figuras iniciado\n";
+    cout << " - Puerto HTTP: " << CLIENT_HTTP_PORT << "\n";
+    cout << " - Puerto descubrimiento: " << DISCOVERY_PORT << "\n";
 
-    // Iniciar hilos: descubrimiento y HTTP
-    thread t1(discovery_thread);
-    thread t2(atender_clientes_http);
-    thread t3(shutdown_listener);
+    // Iniciar hilos
+    thread t1(unified_udp_listener);   // Escucha UDP unificada
+    thread t2(discovery_sender);       // Envía broadcasts de descubrimiento
+    thread t3(atender_clientes_http);  // Servidor HTTP
 
     t1.join();
     t2.join();
